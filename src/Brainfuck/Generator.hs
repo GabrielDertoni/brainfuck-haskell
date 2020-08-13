@@ -1,4 +1,4 @@
-module Generator where
+module Brainfuck.Generator where
 
 import Text.Printf
 

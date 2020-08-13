@@ -1,9 +1,9 @@
-module Instructions where
+module Brainfuck.Instructions where
 
 import Data.Char
 import Text.Printf
 
-import Compiler
+import Brainfuck.Compiler
 
 class Identical a where
   (=:=) :: a -> a -> Bool

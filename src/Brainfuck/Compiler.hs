@@ -1,4 +1,4 @@
-module Compiler where
+module Brainfuck.Compiler where
 
 import Text.ParserCombinators.ReadP
 import Data.Char

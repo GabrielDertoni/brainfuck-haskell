@@ -1,4 +1,4 @@
-module Execution where
+module Brainfuck.Execution where
 
 import GHC.Base (ap, liftM)
 import Control.Monad
@@ -8,8 +8,8 @@ import Data.Char
 import Data.Time
 import Text.Printf
 
-import Instructions
-import Compiler
+import Brainfuck.Instructions
+import Brainfuck.Compiler
 
 memLimit = 30000
 timeLimit = secondsToNominalDiffTime 10

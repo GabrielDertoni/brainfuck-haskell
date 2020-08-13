@@ -8,9 +8,9 @@ import Data.Maybe
 import Data.List
 import Data.Time
 
-import Compiler
-import Instructions
-import Execution
+import Brainfuck.Compiler
+import Brainfuck.Instructions
+import Brainfuck.Execution
 
 handleParseFailure :: IO ()
 handleParseFailure = putStrLn "Failed to parse"
