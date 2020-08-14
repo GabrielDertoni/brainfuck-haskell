@@ -24,6 +24,8 @@ dependencies:
 - QuickCheck
 - hspec
 - time
+- exceptions
+- delay
 
 library:
   source-dirs: src

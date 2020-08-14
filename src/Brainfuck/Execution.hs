@@ -2,22 +2,31 @@ module Brainfuck.Execution where
 
 import GHC.Base (ap, liftM)
 import Control.Monad
+import Control.Exception
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Maybe
 import Data.Char
 import Data.Time
+import Data.Fixed
+import System.Timeout
 import Text.Printf
 
 import Brainfuck.Instructions
 import Brainfuck.Compiler
 
-memLimit = 30000
-timeLimit = secondsToNominalDiffTime 10
-frozenTimeLimit = secondsToNominalDiffTime 120
+memLimit = 30000 -- bytes
+timeLimit = 30 -- seconds
+frozenTimeLimit = 120 -- seconds
+
+-- TODO: implement a more robust catch error system (MonadThrow, MonadCatch, etc.)
 
 data System = System { start_time :: UTCTime
                      , froze_time :: Maybe UTCTime
                      , offset_time :: NominalDiffTime
+                     , input_buffer :: String
+                     , output_buffer :: String
+                     , read_fn :: IO String
+                     , write_fn :: String -> IO ()
                      }
 
 defaultSystem :: IO System
@@ -25,6 +34,10 @@ defaultSystem = do time <- getCurrentTime
                    return System { start_time = time
                                  , froze_time = Nothing
                                  , offset_time = secondsToNominalDiffTime 0
+                                 , input_buffer = ""
+                                 , output_buffer = ""
+                                 , read_fn = (:[]) <$> getChar
+                                 , write_fn = putStr
                                  }
 
 executionTime :: System -> IO NominalDiffTime
@@ -65,18 +78,37 @@ instance Applicative ExecuteM where
   pure a = ExecuteM (\state -> return $ Right (a, state))
   (<*>) = ap
 
+ioErrHandle :: SomeException -> IO (Either String a)
+ioErrHandle e = return $ Left $ show e
+
 instance Monad ExecuteM where
   return a = ExecuteM (\state -> handleEnvErrors $ return $ Right (a, state))
-  (>>=) (ExecuteM exec) f
-    = ExecuteM (\state -> do res <- exec state
-                             case res of
-                              Right (a, new_state) -> handleEnvErrors $ execute (f a) new_state
-                              Left err             -> return $ Left err)
+  (>>=) (ExecuteM exec) f = ExecuteM $
+    \state -> handle ioErrHandle $
+      do res <- exec state
+         case res of
+           Right (a, new_state) -> handleEnvErrors $ execute (f a) new_state
+           Left err             -> return $ Left err
 
 instance MonadIO ExecuteM where
   liftIO action = ExecuteM $
     \state -> do a <- action
                  return $ Right (a, state)
+
+instance MonadFail ExecuteM where
+  fail err = ExecuteM $ \_ -> return $ Left err
+
+{-
+instance MonadThrow ExecuteM where
+  throwM e = ExecuteM $ \_ -> return $ Left $ show e
+
+instance MonadCatch ExecuteM where
+  catch exec f = ExecuteM $
+    \env -> do res <- exec env
+               case res of
+                 Right (a, new_state) -> return $ Right (a, new_state)
+                 Left err             -> f err
+-}
 
 
 actionToExec :: (Memory -> Memory) -> ExecuteM ()
@@ -89,7 +121,7 @@ handleEnvErrors inp
          Right (a, env) -> do checks <- checkErrors env
                               case checks of
                                 []   -> return $ Right (a, env)
-                                errs -> return $ Left $ unlines errs
+                                errs -> return $ Left $ init $ unlines errs
 
          Left errs      -> return $ Left errs
 
@@ -100,6 +132,7 @@ checkList :: [Environment -> IO (Maybe String)]
 checkList = [ checkOutOfMemory
             , checkTimeout
             , checkSegFault
+            -- , checkWaitTimeout
             ]
 
 checkOutOfMemory :: Environment -> IO (Maybe String)
@@ -109,19 +142,21 @@ checkOutOfMemory env
 
 checkTimeout :: Environment -> IO (Maybe String)
 checkTimeout env = do time <- executionTime (system env)
-                      if time > timeLimit
+                      if time > secondsToNominalDiffTime timeLimit
                         then return $ Just "Time limit exceded."
                         else return Nothing
 
+{-
 checkWaitTimeout :: Environment -> IO (Maybe String)
 checkWaitTimeout Environment { system = sys }
   | froze_time sys == Nothing = return Nothing
   | otherwise = do time <- frozenTime sys
                    case time of
                      Nothing -> return Nothing
-                     Just t  -> if t > frozenTimeLimit
+                     Just t  -> if t > secondsToNominalDiffTime frozenTimeLimit
                                   then return $ Just "Frozen time limit exceded."
                                   else return Nothing
+-}
 
 checkSegFault :: Environment -> IO (Maybe String)
 checkSegFault env
@@ -145,6 +180,11 @@ execUnFreeze = ExecuteM $
                           let sys = (system env) { offset_time = off + t, froze_time = Nothing } in
                           return $ Right ((), env { system = sys } )
 
+execGetFreezeTime :: ExecuteM (Maybe NominalDiffTime)
+execGetFreezeTime = ExecuteM $
+  \env -> do time <- frozenTime (system env)
+             return $ Right (time, env)
+
 freezerExecution :: ExecuteM a -> ExecuteM a
 freezerExecution exec = do execFreeze
                            v <- exec
@@ -166,20 +206,59 @@ execIncrement = actionToExec increment
 execDecrement :: ExecuteM ()
 execDecrement = actionToExec decrement
 
+execGetChar :: ExecuteM Char
+execGetChar = ExecuteM $
+  \env -> let sys  = system env in
+          case input_buffer $ system env of
+            []     -> do v <- timeout (frozenTimeLimit*(10^6)) (read_fn sys)
+                         case v of
+                           Nothing     -> return $ Left $ "Frozen time limit exceded."
+                           Just (x:xs) -> return $ pure (x, env { system = sys { input_buffer = xs } })
+            
+            (x:xs) -> return $ pure (x, env { system = sys { input_buffer = xs }})
+
+execPutChar :: Char -> ExecuteM ()
+execPutChar c = ExecuteM $
+  \env -> let sys = system env in
+          let out = output_buffer sys in
+          return $ pure ((), env { system = sys { output_buffer = c:out } })
+
+execOutputBuffer :: ExecuteM ()
+execOutputBuffer = ExecuteM $
+  \env -> do let sys = system env
+             let out = output_buffer sys
+             if length out > 0
+               then do write_fn sys $ reverse out
+                       return $ pure ((), env { system = sys { output_buffer = [] } })
+               else return $ pure ((), env)
+
+execGetOutputBuffer :: ExecuteM String
+execGetOutputBuffer = ExecuteM $
+  \env -> do let sys = system env
+             return $ pure (output_buffer sys, env)
+
 execInput :: ExecuteM ()
-execInput = do c <- liftIO $ getChar
-               if ord c == 27
-                 then kill
-                 else actionToExec $ input c
+execInput = freezerExecution $ do
+              execOutputBuffer -- Only outputs when input needs to be received (or program ends).
+              c <- execGetChar
+              if ord c == 27
+                then kill
+                else actionToExec $ input c
 
 execOutput :: ExecuteM ()
 execOutput = do mem <- execReadMemory
-                liftIO $ putChar $ output mem
-
+                execPutChar $ output mem
 
 interpret :: [Instruction] -> ExecuteM ()
 interpret [] = return ()
-interpret (x:xs)
+interpret instructs = do runInstructions instructs
+                         buff <- execGetOutputBuffer
+                        --  liftIO $ putStrLn $ show buff
+                         execOutputBuffer
+
+runInstructions :: [Instruction] -> ExecuteM ()
+runInstructions [] = return ()
+runInstructions (x:xs)
   = do m <- execReadMemory
        case x of
         Increment -> execIncrement
@@ -190,10 +269,10 @@ interpret (x:xs)
         Output    -> execOutput
         Loop inst -> do mem <- execReadMemory
                         when (readMemoryHead mem /= 0) $ do
-                          interpret inst
-                          interpret [x]
+                          runInstructions inst
+                          runInstructions [x]
 
-       interpret xs
+       runInstructions xs
 
 runProgram :: String -> IO ()
 runProgram prog = do 
@@ -210,6 +289,6 @@ runProgram prog = do
                eTime <- getCurrentTime
                let time = nominalDiffTimeToSeconds $ diffUTCTime eTime sTime
                case res of
-                 Left err       -> printf "Error(s):\n%sTook %s seconds\n" err (show time)
+                 Left err       -> printf "Error(s):\n%s\nTook %s seconds\n" err (show time)
                  Right (_, env) -> do putStrLn $ printf "\nFinished execution. Took %s seconds" (show time)
                                       print $ memory env

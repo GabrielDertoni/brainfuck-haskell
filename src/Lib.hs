@@ -57,39 +57,5 @@ noMonad = do contents <- getLine
 run :: IO ()
 run = do [progFile] <- getArgs
          contents   <- readFile progFile
-         case parseInstructions contents of
-           Left err        -> putStrLn err
-           Right instructs -> runProgram instructs
-
-  where runProgram :: [Instruction] -> IO ()
-        runProgram instructs
-          = do putStrLn "Execution started."
-               env   <- defaultEnv
-               sTime <- getCurrentTime
-               res   <- execute (go instructs) env
-               eTime <- getCurrentTime
-               let time = nominalDiffTimeToSeconds $ diffUTCTime eTime sTime
-               case res of
-                 Left err       -> printf "Error(s):\n%sTook %s seconds\n" err (show time)
-                 Right (_, env) -> do putStrLn $ printf "\nFinished execution. Took %s seconds" (show time)
-                                      print $ memory env
-
-        go :: [Instruction] -> ExecuteM ()
-        go [] = return ()
-        go (x:xs)
-          = do m <- execReadMemory
-               case x of
-                Increment -> execIncrement
-                Decrement -> execDecrement
-                Forward   -> execGoForwards
-                Backward  -> execGoBackwards
-                Input     -> execInput
-                Output    -> execOutput
-                Loop inst -> do mem <- execReadMemory
-                                if readMemoryHead mem /= 0
-                                  then do go inst
-                                          go [x]
-                                  else return ()
-
-               go xs
+         runProgram contents
 
