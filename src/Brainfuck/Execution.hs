@@ -47,6 +47,8 @@ interpret instructs = do runInstructions instructs
                         --  liftIO $ putStrLn $ show buff
                          execOutputBuffer
 
+
+
 runInstructions :: [Instruction] -> ExecuteM ()
 runInstructions [] = return ()
 runInstructions (x:xs)
