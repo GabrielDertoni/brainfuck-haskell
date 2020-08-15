@@ -1,4 +1,4 @@
-module Lib where
+module Brainfuck.NoMonadExecution where
 
 import System.Environment
 import Text.ParserCombinators.ReadP
@@ -10,7 +10,6 @@ import Data.Time
 
 import Brainfuck.Compiler
 import Brainfuck.Instructions
-import Brainfuck.Execution
 
 handleParseFailure :: IO ()
 handleParseFailure = putStrLn "Failed to parse"
@@ -53,9 +52,3 @@ noMonad = do contents <- getLine
                             then go mem xs
                             else do mem' <- go mem inst
                                     go mem' (x:xs)
-
-run :: IO ()
-run = do [progFile] <- getArgs
-         contents   <- readFile progFile
-         runProgram contents
-

@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.31.2.
+-- This file has been generated from package.yaml by hpack version 0.33.0.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1106245b627456a8393d771aedfaafc596a3eff886ee438e607870d0761e7352
+-- hash: cebb6b1439fd17e282138adff24495f35f7161cdf5eb6cd2643777bcdc778d15
 
 name:           brainfuck-haskell
 version:        0.1.0.0
@@ -31,6 +31,7 @@ library
       Brainfuck.Execution
       Brainfuck.Generator
       Brainfuck.Instructions
+      Brainfuck.NoMonadExecution
       Brainfuck.ProtoOS
       Lib
   other-modules:
@@ -40,7 +41,6 @@ library
   build-depends:
       QuickCheck
     , base >=4.7 && <5
-    , delay
     , exceptions
     , hspec
     , time
@@ -57,7 +57,6 @@ executable brainfuck-haskell-exe
       QuickCheck
     , base >=4.7 && <5
     , brainfuck-haskell
-    , delay
     , exceptions
     , hspec
     , time
@@ -75,7 +74,6 @@ test-suite brainfuck-haskell-test
       QuickCheck
     , base >=4.7 && <5
     , brainfuck-haskell
-    , delay
     , exceptions
     , hspec
     , time
