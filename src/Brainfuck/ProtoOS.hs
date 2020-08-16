@@ -14,17 +14,23 @@ import Text.Printf
 import Brainfuck.Instructions
 import Brainfuck.Compiler
 
-memLimit = 30000 -- bytes
-timeLimit = 30 -- seconds
-frozenTimeLimit = 120 -- seconds
+-- memLimit = 30000
+-- timeLimit = 30
+-- frozenTimeLimit = 120
+
+toPico :: Int -> Pico
+toPico num = MkFixed $ (10^12) * fromIntegral num
 
 -- TODO: implement a more robust catch error system (MonadThrow, MonadCatch, etc.)
 
-data System = System { start_time :: UTCTime
-                     , froze_time :: Maybe UTCTime
-                     , offset_time :: NominalDiffTime
+data System = System { start_time :: UTCTime -- time program started
+                     , froze_time :: Maybe UTCTime -- time freeze started
+                     , offset_time :: NominalDiffTime -- sum of frozen times
                      , input_buffer :: String
                      , output_buffer :: String
+                     , mem_limit :: Int -- bytes
+                     , time_limit :: Int -- seconds
+                     , frozen_time_limit :: Int -- seconds
                      , read_fn :: IO String
                      , write_fn :: String -> IO ()
                      }
@@ -36,7 +42,10 @@ defaultSystem = do time <- getCurrentTime
                                  , offset_time = secondsToNominalDiffTime 0
                                  , input_buffer = ""
                                  , output_buffer = ""
-                                 , read_fn = (:[]) <$> getChar
+                                 , mem_limit = 30000
+                                 , time_limit = 30
+                                 , frozen_time_limit = 120
+                                 , read_fn = (<> "\n") <$> getLine
                                  , write_fn = putStr
                                  }
 
@@ -79,7 +88,8 @@ instance Applicative ExecuteM where
   (<*>) = ap
 
 ioErrHandle :: SomeException -> IO (Either String a)
-ioErrHandle e = return $ Left $ show e
+ioErrHandle e = do print e
+                   return $ Left "Internal error."
 
 instance Monad ExecuteM where
   return a = ExecuteM (\state -> handleEnvErrors $ return $ Right (a, state))
@@ -132,17 +142,16 @@ checkList :: [Environment -> IO (Maybe String)]
 checkList = [ checkOutOfMemory
             , checkTimeout
             , checkSegFault
-            -- , checkWaitTimeout
             ]
 
 checkOutOfMemory :: Environment -> IO (Maybe String)
 checkOutOfMemory env
-  | (memorySize $ memory env) > memLimit = return $ Just "Memory limit exceded."
+  | (memorySize $ memory env) > mem_limit (system env) = return $ Just "Memory limit exceded."
   | otherwise = return Nothing
 
 checkTimeout :: Environment -> IO (Maybe String)
 checkTimeout env = do time <- executionTime (system env)
-                      if time > secondsToNominalDiffTime timeLimit
+                      if time > secondsToNominalDiffTime (toPico $ time_limit $ system env)
                         then return $ Just "Time limit exceded."
                         else return Nothing
 
@@ -195,7 +204,7 @@ execGetChar :: ExecuteM Char
 execGetChar = ExecuteM $
   \env -> let sys  = system env in
           case input_buffer $ system env of
-            []     -> do v <- timeout (frozenTimeLimit*(10^6)) (read_fn sys)
+            []     -> do v <- timeout (frozen_time_limit sys * (10^6)) (read_fn sys)
                          case v of
                            Nothing     -> return $ Left $ "Frozen time limit exceded."
                            Just (x:xs) -> return $ pure (x, env { system = sys { input_buffer = xs } })
@@ -222,6 +231,10 @@ execGetOutputBuffer = ExecuteM $
   \env -> do let sys = system env
              return $ pure (output_buffer sys, env)
 
+execGetInputBuffer :: ExecuteM String
+execGetInputBuffer = ExecuteM $
+  \env -> do let sys = system env
+             return $ pure (input_buffer sys, env)
 
 execReadMemory :: ExecuteM Memory
 execReadMemory = ExecuteM $ \env -> return $ Right (memory env, env)

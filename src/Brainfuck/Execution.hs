@@ -30,7 +30,9 @@ execDecrement = actionToExec decrement
 
 execInput :: ExecuteM ()
 execInput = freezerExecution $ do
-              execOutputBuffer -- Only outputs when input needs to be received (or program ends).
+              buff <- execGetInputBuffer
+              -- Only outputs when input needs to be received (or program ends).
+              when (length buff == 0) execOutputBuffer
               c <- execGetChar
               if ord c == 27
                 then kill
@@ -44,10 +46,7 @@ interpret :: [Instruction] -> ExecuteM ()
 interpret [] = return ()
 interpret instructs = do runInstructions instructs
                          buff <- execGetOutputBuffer
-                        --  liftIO $ putStrLn $ show buff
                          execOutputBuffer
-
-
 
 runInstructions :: [Instruction] -> ExecuteM ()
 runInstructions [] = return ()

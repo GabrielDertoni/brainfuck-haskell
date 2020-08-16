@@ -81,7 +81,7 @@ getParseError contents unparsed
   where c = if unparsed == [] then "" else printf "'%c', " $ head unparsed
         ncol = length line + 1
         line = if lines parsed == [] then "" else last $ lines parsed
-        nline = (length $ lines parsed) + 1
+        nline = length $ lines parsed
         parsed = take (length contents - length unparsed) contents
 
 parseInstructions :: String -> Either String [Instruction]
