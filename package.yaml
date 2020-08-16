@@ -25,6 +25,11 @@ dependencies:
 - hspec
 - time
 - exceptions
+- containers
+- bytestring
+
+default-extensions:
+- ScopedTypeVariables
 
 library:
   source-dirs: src

@@ -2,11 +2,37 @@ module Brainfuck.Instructions where
 
 import Data.Char
 import Text.Printf
+import GHC.Exts (IsList)
+
+import qualified Data.IntMap.Lazy as Map
+import           Data.Word
 
 import Brainfuck.Compiler
 
 class Identical a where
   (=:=) :: a -> a -> Bool
+
+class ProtoMemory a where
+  memoryToList   :: Integral b => a -> [b]
+  
+  listToMemory   :: Integral b => Int -> [b] -> a
+  
+  memorySize     :: a -> Int
+  memorySize m = length $ memoryToList m
+  
+  emptyMemory    :: a
+  emptyMemory = listToMemory 0 [0]
+
+  -- Reads the memory at the head position.
+  readMemoryHead :: Integral b => a -> b
+  
+  -- Gets the position of the head pointer.
+  memoryPointer  :: a -> Int
+
+  -- Moves the pointer position by a certain offset
+  moveHead :: Int -> a -> a
+  
+  modifyMemoryHead :: Integral b => a -> (b -> b) -> a
 
 data Memory = Memory { left :: [Int]
                      , right :: [Int]
@@ -26,54 +52,76 @@ instance Eq Memory where
 instance Identical Memory where
   (=:=) a b = trimMemory a == trimMemory b
 
-memoryPointer :: Memory -> Int
-memoryPointer = pointerPosition
+instance ProtoMemory Memory where
+  memoryPointer = pointerPosition
+  
+  listToMemory off ilst = Memory (reverse $ take off lst) (drop off lst) off
+    where lst = fromIntegral <$> ilst
+  
+  memoryToList (Memory left right _) = fromIntegral <$> (reverse left <> right)
+  
+  readMemoryHead = fromIntegral . head . right
 
-trimMemory :: Memory -> Memory
+  modifyMemoryHead (Memory left (x:xs) ptr) f
+    = Memory left (fromIntegral (f $ fromIntegral x) : xs) ptr
+  
+  moveHead off (Memory left right ptr)
+    | off > 0 && null right = moveHead (off - 1) $ Memory (0:left) [0] (ptr + 1)
+    | off > 0               = moveHead (off - 1) $ Memory (head right : left) (tail right) (ptr + 1)
+    | off < 0 && null left  = moveHead (off + 1) $ Memory [] (0:right) (ptr - 1)
+    | off < 0               = moveHead (off + 1) $ Memory (tail left) (head left : right) (ptr - 1)
+    | otherwise = Memory left right ptr
+
+data IntMapMemory = IntMapMemory { memMap :: Map.IntMap Word8
+                                 , headPosition :: Int
+                                 }
+
+instance Show IntMapMemory where
+  show mem = printf "%d | %s" (headPosition mem) (show $ memMap mem)
+
+instance Eq IntMapMemory where
+  (==) a b = memMap a == memMap b
+
+instance Identical IntMapMemory where
+  (=:=) a b = (headPosition a == headPosition b) && (memMap a == memMap b)
+
+instance ProtoMemory IntMapMemory where
+  memoryPointer = headPosition
+
+  listToMemory off lst = IntMapMemory (Map.fromList $ zip [0..] $ fromIntegral <$> lst) off
+  
+  memoryToList = map fromIntegral . snd . unzip . Map.toList . memMap
+
+  readMemoryHead mem = maybe 0 id lk
+    where lk = fromIntegral <$> Map.lookup (headPosition mem) (memMap mem)
+  
+  moveHead off mem = mem { headPosition = headPosition mem + off }
+
+  modifyMemoryHead mem f = mem { memMap = Map.insert hp (fromIntegral fx) mp }
+    where mp = memMap mem
+          hp = headPosition mem
+          fx = f $ readMemoryHead mem
+
+trimMemory :: ProtoMemory a => a -> a
 trimMemory mem = listToMemory (memoryPointer mem) $ trimList $ memoryToList mem
 
 trimList :: [Int] -> [Int]
 trimList = dropWhile (==0) . reverse . dropWhile (==0) . reverse
 
-listToMemory :: Int -> [Int] -> Memory
-listToMemory off lst = Memory (reverse $ take off lst) (drop off lst) off
+goForwards :: ProtoMemory a => a -> a
+goForwards = moveHead 1
 
-memoryToList :: Memory -> [Int]
-memoryToList (Memory left right _) = reverse left <> right
+goBackwards :: ProtoMemory a => a -> a
+goBackwards = moveHead (-1)
 
-memorySize :: Memory -> Int
-memorySize (Memory left right _) = length left + length right
+increment :: ProtoMemory a => a -> a
+increment mem = modifyMemoryHead mem $ \x -> if x + 1 < 256 then x + 1 else 0
 
-emptyMemory :: Memory
-emptyMemory = Memory [] [0] 0
+decrement :: ProtoMemory a => a -> a
+decrement mem = modifyMemoryHead mem $ \x -> if x - 1 >= 0 then x - 1 else 255
 
-readMemoryHead :: Memory -> Int
-readMemoryHead = head . right
+input :: ProtoMemory a => Char -> a -> a
+input inp mem = modifyMemoryHead mem $ \_ -> ord inp
 
-goForwards :: Memory -> Memory
-goForwards (Memory left []     ptr) = Memory (0:left) [0] (ptr + 1)
-goForwards (Memory left (x:[]) ptr) = Memory (x:left) [0] (ptr + 1)
-goForwards (Memory left (x:xs) ptr) = Memory (x:left) xs (ptr + 1)
-
-goBackwards :: Memory -> Memory
-goBackwards (Memory []     right ptr) = Memory [] (0:right) (ptr - 1)
-goBackwards (Memory (x:xs) right ptr) = Memory xs (x:right) (ptr - 1)
-
-increment :: Memory -> Memory
-increment mem = if x + 1 < 256
-                  then mem { right = x + 1 : xs}
-                  else mem { right = 0 : xs }
-  where (x:xs) = right mem
-
-decrement :: Memory -> Memory
-decrement mem = if x - 1 >= 0
-                  then mem { right = x - 1 : xs }
-                  else mem { right = 255 : xs}
-  where (x:xs) = right mem
-
-input :: Char -> Memory -> Memory
-input inp mem = mem { right = ord inp : xs }
-  where (x:xs) = right mem
-
-output :: Memory -> Char
-output = chr . head . right
+output :: ProtoMemory a => a -> Char
+output = chr . readMemoryHead

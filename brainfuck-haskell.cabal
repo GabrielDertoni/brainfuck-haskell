@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 7359b647e459d31891e19df05ca4c8d0709de3479026f142e78d8776c22ce37e
+-- hash: 7df1e455fcb0d33f789c6ecf937af3903b9f36c627ff38f5288071591dfbcd59
 
 name:           brainfuck-haskell
 version:        0.1.0.0
@@ -37,9 +37,12 @@ library
       Paths_brainfuck_haskell
   hs-source-dirs:
       src
+  default-extensions: ScopedTypeVariables
   build-depends:
       QuickCheck
     , base >=4.7 && <5
+    , bytestring
+    , containers
     , exceptions
     , hspec
     , time
@@ -52,11 +55,14 @@ test-suite brainfuck-haskell-test
       Paths_brainfuck_haskell
   hs-source-dirs:
       test
+  default-extensions: ScopedTypeVariables
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
     , base >=4.7 && <5
     , brainfuck-haskell
+    , bytestring
+    , containers
     , exceptions
     , hspec
     , time
