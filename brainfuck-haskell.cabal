@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 7df1e455fcb0d33f789c6ecf937af3903b9f36c627ff38f5288071591dfbcd59
+-- hash: d27cad1abc84f7f66fe53918a2c9a7ae72f62de17f12fb39b3682061df112e8f
 
 name:           brainfuck-haskell
 version:        0.1.0.0
@@ -37,12 +37,33 @@ library
       Paths_brainfuck_haskell
   hs-source-dirs:
       src
-  default-extensions: ScopedTypeVariables
+  default-extensions: ScopedTypeVariables BangPatterns DeriveGeneric DeriveAnyClass
   build-depends:
       QuickCheck
     , base >=4.7 && <5
     , bytestring
     , containers
+    , deepseq
+    , exceptions
+    , hspec
+    , time
+  default-language: Haskell2010
+
+executable brainfuck-haskell-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_brainfuck_haskell
+  hs-source-dirs:
+      app
+  default-extensions: ScopedTypeVariables BangPatterns DeriveGeneric DeriveAnyClass
+  ghc-options: -threaded -rtsopts -O2 -with-rtsopts=-N
+  build-depends:
+      QuickCheck
+    , base >=4.7 && <5
+    , brainfuck-haskell
+    , bytestring
+    , containers
+    , deepseq
     , exceptions
     , hspec
     , time
@@ -55,7 +76,7 @@ test-suite brainfuck-haskell-test
       Paths_brainfuck_haskell
   hs-source-dirs:
       test
-  default-extensions: ScopedTypeVariables
+  default-extensions: ScopedTypeVariables BangPatterns DeriveGeneric DeriveAnyClass
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -63,6 +84,7 @@ test-suite brainfuck-haskell-test
     , brainfuck-haskell
     , bytestring
     , containers
+    , deepseq
     , exceptions
     , hspec
     , time

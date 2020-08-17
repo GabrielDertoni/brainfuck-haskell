@@ -60,8 +60,12 @@ instance ProtoMemory Memory where
   
   memoryToList (Memory left right _) = fromIntegral <$> (reverse left <> right)
   
-  readMemoryHead = fromIntegral . head . right
+  readMemoryHead mem
+    | null (right mem) = 0
+    | otherwise = fromIntegral $ head $ right mem
 
+  modifyMemoryHead (Memory left [] ptr) f
+    = Memory left (fromIntegral (f 0) : []) ptr
   modifyMemoryHead (Memory left (x:xs) ptr) f
     = Memory left (fromIntegral (f $ fromIntegral x) : xs) ptr
   
@@ -74,6 +78,7 @@ instance ProtoMemory Memory where
 
 data IntMapMemory = IntMapMemory { memMap :: Map.IntMap Word8
                                  , headPosition :: Int
+                                 , memSize :: Integer
                                  }
 
 instance Show IntMapMemory where
@@ -88,19 +93,30 @@ instance Identical IntMapMemory where
 instance ProtoMemory IntMapMemory where
   memoryPointer = headPosition
 
-  listToMemory off lst = IntMapMemory (Map.fromList $ zip [0..] $ fromIntegral <$> lst) off
+  listToMemory off lst
+    = IntMapMemory { memMap = Map.fromList $ zip [0..] $ fromIntegral <$> lst
+                   , headPosition = off
+                   , memSize = fromIntegral $ length lst
+                   }
   
   memoryToList = map fromIntegral . snd . unzip . Map.toList . memMap
+
+  -- memorySize = Map.size . memMap
+  memorySize = fromIntegral . memSize
 
   readMemoryHead mem = maybe 0 id lk
     where lk = fromIntegral <$> Map.lookup (headPosition mem) (memMap mem)
   
   moveHead off mem = mem { headPosition = headPosition mem + off }
 
-  modifyMemoryHead mem f = mem { memMap = Map.insert hp (fromIntegral fx) mp }
+  modifyMemoryHead mem f = case lk of
+    Nothing -> mem { memMap = Map.insert hp (fromIntegral (f 0)) mp
+                    , memSize = memSize mem + 1 }
+    Just x  -> mem { memMap = Map.insert hp (fromIntegral (f x)) mp }
     where mp = memMap mem
           hp = headPosition mem
-          fx = f $ readMemoryHead mem
+          -- fx = f $ readMemoryHead mem
+          lk = fromIntegral <$> Map.lookup (headPosition mem) (memMap mem)
 
 trimMemory :: ProtoMemory a => a -> a
 trimMemory mem = listToMemory (memoryPointer mem) $ trimList $ memoryToList mem

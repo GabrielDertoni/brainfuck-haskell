@@ -14,10 +14,6 @@ import Text.Printf
 import Brainfuck.Instructions
 import Brainfuck.Compiler
 
--- memLimit = 30000
--- timeLimit = 30
--- frozenTimeLimit = 120
-
 toPico :: Int -> Pico
 toPico num = MkFixed $ (10^12) * fromIntegral num
 
@@ -54,7 +50,7 @@ executionTime sys
   = do time <- getCurrentTime
        off  <- offsetTime sys
        let execTime = diffUTCTime time (start_time sys)
-       return (execTime - off)
+       return $! (execTime - off)
 
 frozenTime :: System -> IO (Maybe NominalDiffTime)
 frozenTime System { froze_time = t }
@@ -68,44 +64,50 @@ offsetTime sys
          Nothing -> return $ offset_time sys
          Just t  -> return (offset_time sys + t)
 
-data Environment
-    = Environment { memory :: Memory
+data Environment a
+    = Environment { memory :: a
                   , system :: System
                   }
 
-defaultEnv :: IO Environment
+instance Show (Environment a) where
+  show env = "Environment"
+
+type Env = Environment IntMapMemory
+-- type Env = Environment Memory
+
+defaultEnv :: IO Env
 defaultEnv = do sys <- defaultSystem
                 return $ Environment emptyMemory sys
 
-data ExecuteM a
-  = ExecuteM { execute :: Environment -> IO (Either String (a, Environment)) }
+data ExecuteM a b
+  = ExecuteM { execute :: Environment a -> IO (Either String (b, Environment a)) }
 
-instance Functor ExecuteM where
+instance ProtoMemory a => Functor (ExecuteM a) where
   fmap f x = x >>= (pure . f)
 
-instance Applicative ExecuteM where
+instance ProtoMemory a => Applicative (ExecuteM a) where
   pure a = ExecuteM (\state -> return $ Right (a, state))
   (<*>) = ap
 
-ioErrHandle :: SomeException -> IO (Either String a)
+ioErrHandle :: IOException -> IO (Either String a)
 ioErrHandle e = do print e
                    return $ Left "Internal error."
 
-instance Monad ExecuteM where
-  return a = ExecuteM (\state -> handleEnvErrors $ return $ Right (a, state))
+instance ProtoMemory a => Monad (ExecuteM a) where
+  return = pure
   (>>=) (ExecuteM exec) f = ExecuteM $
     \state -> handle ioErrHandle $
       do res <- exec state
          case res of
-           Right (a, new_state) -> handleEnvErrors $ execute (f a) new_state
+           Right (a, new_state) -> execute (f a) new_state
            Left err             -> return $ Left err
 
-instance MonadIO ExecuteM where
+instance ProtoMemory a => MonadIO (ExecuteM a) where
   liftIO action = ExecuteM $
     \state -> do a <- action
                  return $ Right (a, state)
 
-instance MonadFail ExecuteM where
+instance ProtoMemory a => MonadFail (ExecuteM a) where
   fail err = ExecuteM $ \_ -> return $ Left err
 
 {-
@@ -121,10 +123,10 @@ instance MonadCatch ExecuteM where
 -}
 
 
-actionToExec :: (Memory -> Memory) -> ExecuteM ()
+actionToExec :: ProtoMemory a => (a -> a) -> ExecuteM a ()
 actionToExec action = ExecuteM $ \env -> return $ Right ((), env { memory = action $ memory env })
 
-handleEnvErrors :: IO (Either String (a, Environment)) -> IO (Either String (a, Environment))
+handleEnvErrors :: ProtoMemory a => IO (Either String (b, Environment a)) -> IO (Either String (b, Environment a))
 handleEnvErrors inp
   = do state <- inp
        case state of
@@ -135,21 +137,20 @@ handleEnvErrors inp
 
          Left errs      -> return $ Left errs
 
-checkErrors :: Environment -> IO [String]
+checkErrors :: ProtoMemory a => Environment a -> IO [String]
 checkErrors env = catMaybes <$> sequence (checkList <*> pure env)
 
-checkList :: [Environment -> IO (Maybe String)]
+checkList :: ProtoMemory a => [Environment a -> IO (Maybe String)]
 checkList = [ checkOutOfMemory
             , checkTimeout
-            , checkSegFault
             ]
 
-checkOutOfMemory :: Environment -> IO (Maybe String)
+checkOutOfMemory :: ProtoMemory a => Environment a -> IO (Maybe String)
 checkOutOfMemory env
   | (memorySize $ memory env) > mem_limit (system env) = return $ Just "Memory limit exceded."
   | otherwise = return Nothing
 
-checkTimeout :: Environment -> IO (Maybe String)
+checkTimeout :: ProtoMemory a => Environment a -> IO (Maybe String)
 checkTimeout env = do time <- executionTime (system env)
                       if time > secondsToNominalDiffTime (toPico $ time_limit $ system env)
                         then return $ Just "Time limit exceded."
@@ -167,20 +168,15 @@ checkWaitTimeout Environment { system = sys }
                                   else return Nothing
 -}
 
-checkSegFault :: Environment -> IO (Maybe String)
-checkSegFault env
-  | (right $ memory env) == [] = return $ Just "Segmentation fault."
-  | otherwise = return Nothing
-
-kill :: ExecuteM ()
+kill :: ProtoMemory a => ExecuteM a ()
 kill = ExecuteM $ \_ -> return $ Left "Program terminated by user.\n"
 
-execFreeze :: ExecuteM ()
+execFreeze :: ProtoMemory a => ExecuteM a ()
 execFreeze = ExecuteM $
   \env -> do time <- getCurrentTime
              return $ Right ((), env { system = (system env) { froze_time = Just time } } )
 
-execUnFreeze :: ExecuteM ()
+execUnFreeze :: ProtoMemory a => ExecuteM a ()
 execUnFreeze = ExecuteM $
   \env -> do time <- frozenTime (system env)
              case time of
@@ -189,18 +185,18 @@ execUnFreeze = ExecuteM $
                           let sys = (system env) { offset_time = off + t, froze_time = Nothing } in
                           return $ Right ((), env { system = sys } )
 
-execGetFreezeTime :: ExecuteM (Maybe NominalDiffTime)
+execGetFreezeTime :: ProtoMemory a => ExecuteM a (Maybe NominalDiffTime)
 execGetFreezeTime = ExecuteM $
   \env -> do time <- frozenTime (system env)
              return $ Right (time, env)
 
-freezerExecution :: ExecuteM a -> ExecuteM a
+freezerExecution :: ProtoMemory a => ExecuteM a b -> ExecuteM a b
 freezerExecution exec = do execFreeze
                            v <- exec
                            execUnFreeze
                            return v
 
-execGetChar :: ExecuteM Char
+execGetChar :: ProtoMemory a => ExecuteM a Char
 execGetChar = ExecuteM $
   \env -> let sys  = system env in
           case input_buffer $ system env of
@@ -211,13 +207,13 @@ execGetChar = ExecuteM $
             
             (x:xs) -> return $ pure (x, env { system = sys { input_buffer = xs }})
 
-execPutChar :: Char -> ExecuteM ()
+execPutChar :: ProtoMemory a => Char -> ExecuteM a ()
 execPutChar c = ExecuteM $
   \env -> let sys = system env in
           let out = output_buffer sys in
           return $ pure ((), env { system = sys { output_buffer = c:out } })
 
-execOutputBuffer :: ExecuteM ()
+execOutputBuffer :: ProtoMemory a => ExecuteM a ()
 execOutputBuffer = ExecuteM $
   \env -> do let sys = system env
              let out = output_buffer sys
@@ -226,15 +222,18 @@ execOutputBuffer = ExecuteM $
                        return $ pure ((), env { system = sys { output_buffer = [] } })
                else return $ pure ((), env)
 
-execGetOutputBuffer :: ExecuteM String
+execGetOutputBuffer :: ProtoMemory a => ExecuteM a String
 execGetOutputBuffer = ExecuteM $
   \env -> do let sys = system env
              return $ pure (output_buffer sys, env)
 
-execGetInputBuffer :: ExecuteM String
+execGetInputBuffer :: ProtoMemory a => ExecuteM a String
 execGetInputBuffer = ExecuteM $
   \env -> do let sys = system env
              return $ pure (input_buffer sys, env)
 
-execReadMemory :: ExecuteM Memory
+execReadMemory :: ProtoMemory a => ExecuteM a a
 execReadMemory = ExecuteM $ \env -> return $ Right (memory env, env)
+
+execGetEnv :: ProtoMemory a => ExecuteM a (Environment a)
+execGetEnv = ExecuteM $ \env -> return $ Right (env, env)

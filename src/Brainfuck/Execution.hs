@@ -16,19 +16,27 @@ import Brainfuck.Compiler
 import Brainfuck.ProtoOS
 
 
-execGoForwards :: ExecuteM ()
-execGoForwards = actionToExec goForwards
+execGoForwards :: ProtoMemory a => ExecuteM a ()
+execGoForwards = do
+  actionToExec goForwards
+  env <- execGetEnv
+  when (memorySize (memory env) > mem_limit (system env)) $
+    fail "Memory limit exceded."
 
-execGoBackwards :: ExecuteM ()
-execGoBackwards = actionToExec goBackwards
+execGoBackwards :: ProtoMemory a => ExecuteM a ()
+execGoBackwards = do
+  actionToExec goBackwards
+  env <- execGetEnv
+  when (memorySize (memory env) > mem_limit (system env)) $
+    fail "Memory limit exceded."
 
-execIncrement :: ExecuteM ()
+execIncrement :: ProtoMemory a => ExecuteM a ()
 execIncrement = actionToExec increment
 
-execDecrement :: ExecuteM ()
+execDecrement :: ProtoMemory a => ExecuteM a ()
 execDecrement = actionToExec decrement
 
-execInput :: ExecuteM ()
+execInput :: ProtoMemory a => ExecuteM a ()
 execInput = freezerExecution $ do
               buff <- execGetInputBuffer
               -- Only outputs when input needs to be received (or program ends).
@@ -38,19 +46,27 @@ execInput = freezerExecution $ do
                 then kill
                 else actionToExec $ input c
 
-execOutput :: ExecuteM ()
+execOutput :: ProtoMemory a => ExecuteM a ()
 execOutput = do mem <- execReadMemory
                 execPutChar $ output mem
 
-interpret :: [Instruction] -> ExecuteM ()
+execTimeout :: ProtoMemory a => Int -> ExecuteM a () -> ExecuteM a ()
+execTimeout limit exec = ExecuteM $
+  \env -> do res <- timeout (limit * (10^6)) $ execute exec env
+             case res of
+               Nothing -> return $ Left "Time limit exceded."
+               Just v  -> return v
+
+interpret :: ProtoMemory a => [Instruction] -> ExecuteM a ()
 interpret [] = return ()
-interpret instructs = do runInstructions instructs
+interpret instructs = do env <- execGetEnv
+                         execTimeout (time_limit $ system env) $ runInstructions instructs
                          buff <- execGetOutputBuffer
                          execOutputBuffer
 
-runInstructions :: [Instruction] -> ExecuteM ()
+runInstructions :: ProtoMemory a => [Instruction] -> ExecuteM a ()
 runInstructions [] = return ()
-runInstructions (x:xs)
+runInstructions (!x:xs)
   = do m <- execReadMemory
        case x of
         Increment -> execIncrement
@@ -83,4 +99,4 @@ runProgram prog = do
                case res of
                  Left err       -> printf "Error(s):\n%s\nTook %s seconds\n" err (show time)
                  Right (_, env) -> do putStrLn $ printf "\nFinished execution. Took %s seconds" (show time)
-                                      print $ memory env
+                                      -- print $ memory env

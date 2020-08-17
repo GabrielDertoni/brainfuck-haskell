@@ -1,5 +1,7 @@
 module Brainfuck.Compiler where
 
+import GHC.Generics (Generic)
+import Control.DeepSeq (deepseq, NFData)
 import Text.ParserCombinators.ReadP
 import Data.Char
 import Control.Applicative ((<|>), some)
@@ -13,7 +15,7 @@ data Instruction
   | Input
   | Output
   | Loop [Instruction]
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NFData)
 
 reservedChars :: [Char]
 reservedChars = [ '+'
@@ -34,10 +36,11 @@ ignore :: ReadP String
 ignore = readS_to_P $ (\inp -> [span (`notElem` reservedChars) inp])
 
 token :: ReadP a -> ReadP a
-token pars = do ignore
-                v <- pars
-                ignore
-                return v
+-- token pars = do ignore
+--                 v <- pars
+--                 ignore
+--                 return v
+token pars = pars
 
 incrementInstruction :: ReadP Instruction
 incrementInstruction = token (char '+') *> return Increment
@@ -85,8 +88,10 @@ getParseError contents unparsed
         parsed = take (length contents - length unparsed) contents
 
 parseInstructions :: String -> Either String [Instruction]
-parseInstructions contents
+parseInstructions !contents
   | parsed == [] = Left "Parse error on line 0 col 0."
   | (snd $ last parsed) /= "" = Left $ getParseError contents $ snd $ last parsed
   | otherwise = Right $ fst $ last parsed
-  where parsed = readP_to_S instructions contents
+  where parsed = readP_to_S instructions filtered `deepseq` readP_to_S instructions filtered
+        filtered = filter (flip elem reservedChars) contents
+  -- where parsed = readP_to_S instructions contents `deepseq` readP_to_S instructions contents

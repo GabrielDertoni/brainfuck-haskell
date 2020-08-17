@@ -27,9 +27,25 @@ dependencies:
 - exceptions
 - containers
 - bytestring
+- deepseq
 
 default-extensions:
 - ScopedTypeVariables
+- BangPatterns
+- DeriveGeneric
+- DeriveAnyClass
+
+executables:
+  brainfuck-haskell-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -O2
+    - -with-rtsopts=-N
+    dependencies:
+    - brainfuck-haskell
 
 library:
   source-dirs: src
