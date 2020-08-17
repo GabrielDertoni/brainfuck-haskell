@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d27cad1abc84f7f66fe53918a2c9a7ae72f62de17f12fb39b3682061df112e8f
+-- hash: cde5590db9910e6e19d8dd4bd3ff1f7984494692fd4aad182150050a2b2e3acd
 
 name:           brainfuck-haskell
 version:        0.1.0.0
@@ -41,26 +41,6 @@ library
   build-depends:
       QuickCheck
     , base >=4.7 && <5
-    , bytestring
-    , containers
-    , deepseq
-    , exceptions
-    , hspec
-    , time
-  default-language: Haskell2010
-
-executable brainfuck-haskell-exe
-  main-is: Main.hs
-  other-modules:
-      Paths_brainfuck_haskell
-  hs-source-dirs:
-      app
-  default-extensions: ScopedTypeVariables BangPatterns DeriveGeneric DeriveAnyClass
-  ghc-options: -threaded -rtsopts -O2 -with-rtsopts=-N
-  build-depends:
-      QuickCheck
-    , base >=4.7 && <5
-    , brainfuck-haskell
     , bytestring
     , containers
     , deepseq

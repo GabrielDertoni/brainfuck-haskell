@@ -35,17 +35,17 @@ default-extensions:
 - DeriveGeneric
 - DeriveAnyClass
 
-executables:
-  brainfuck-haskell-exe:
-    main:                Main.hs
-    source-dirs:         app
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -O2
-    - -with-rtsopts=-N
-    dependencies:
-    - brainfuck-haskell
+# executables:
+#   brainfuck-haskell-exe:
+#     main:                Main.hs
+#     source-dirs:         app
+#     ghc-options:
+#     - -threaded
+#     - -rtsopts
+#     - -O2
+#     - -with-rtsopts=-N
+#     dependencies:
+#     - brainfuck-haskell
 
 library:
   source-dirs: src
